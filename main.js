@@ -115,6 +115,18 @@ const parseComplex = (data, originalMap) => {
       }
     }
   }
+  const excess = [];
+  for (let i = ptr; i < data.length; i++) {
+    excess.push([data[i].re, data[i].im]);
+  }
+  features.push({
+    type: "Feature",
+    geometry: {
+      type: "LineString",
+      coordinates: excess,
+    },
+    properties: {},
+  });
 };
 
 const convToBlackWhite = (arr) => {
@@ -241,9 +253,7 @@ const normalize = (phase) => {
 };
 
 const getCategory = (phase, step) => {
-  const angle = (2 * math.pi) / step;
-
-  const region = Math.floor(phase / angle);
+  const region = Math.floor(phase / step);
   if (region % 2 === 0) {
     return 1;
   } else {
@@ -253,7 +263,8 @@ const getCategory = (phase, step) => {
 
 const embed = (map, watermark, step) => {
   const stepNormalized = (step / 360.0) * 2 * math.pi;
-  const mapData = map;
+  let mapData = map;
+  console.log(mapData.length);
   let cur = 1;
   while (mapData.length > cur) {
     cur *= 2;
@@ -263,18 +274,53 @@ const embed = (map, watermark, step) => {
     mapData.push(math.complex(0));
   }
   fft(mapData, 1);
-
-  const copyof = [...mapData];
+  //mapData = dft_normal(mapData);
   for (let i = 0; i < watermark.length; i++) {
     const polarForm = mapData[i].toPolar();
     const phi = normalize(polarForm.phi);
     if (getCategory(phi, stepNormalized) !== watermark[i]) {
-      const newAngle = (phi + stepNormalized) % (2 * math.pi);
+      const newAngle = phi + stepNormalized;
       const r = polarForm.r;
       mapData[i] = math.complex({ r: r, phi: newAngle });
     }
+    // if (i < 10) {
+    //   console.log(mapData[i]);
+    //   console.log(getCategory(mapData[i].toPolar().phi, stepNormalized));
+    // }
   }
   fft(mapData, -1);
+  //mapData = inverse_dft_normal(mapData);
+  // fft(mapData, 1);
+  // console.log("batas");
+  // // fft(mapData, -1);
+};
+
+const extract = (map, width, height, step) => {
+  const result = [];
+  const stepNormalized = (step / 360.0) * 2 * math.pi;
+  let mapData = map;
+  console.log(mapData.length);
+  let cur = 1;
+  while (mapData.length > cur) {
+    cur *= 2;
+  }
+  let diff = cur - mapData.length;
+  for (let i = 0; i < diff; i++) {
+    mapData.push(math.complex(0));
+  }
+  //mapData = dft_normal(mapData);
+  fft(mapData, 1);
+
+  for (let i = 0; i < width * height; i++) {
+    // if (i < 10) {
+    //   console.log(mapData[i]);
+    //   console.log(getCategory(mapData[i].toPolar().phi, stepNormalized));
+    // }
+    const polarForm = mapData[i].toPolar();
+    const phi = normalize(polarForm.phi);
+    result.push(getCategory(phi, stepNormalized));
+  }
+  return result;
 };
 // console.log(dft_normal(initial));
 // console.log(initial);
@@ -302,10 +348,26 @@ if (cmd === "embed") {
     }
     const watermarkArray = convToBlackWhite(decoded.data);
 
-    embed(mapData, watermarkArray, 0.02);
+    embed(mapData, watermarkArray, 0.03);
     parseComplex(mapData, data);
 
     fs.writeFileSync(targetname, JSON.stringify(data));
   });
 } else if (cmd === "extract") {
+  const mapfilename = process.argv[3];
+  const watermarkfilename = process.argv[4];
+  const width = parseInt(process.argv[5]);
+  const height = parseInt(process.argv[6]);
+
+  let rawdata = fs.readFileSync(mapfilename);
+  let data = JSON.parse(rawdata);
+
+  const mapData = parseMap(data);
+
+  const watermarkData = extract(mapData, width, height, 0.03);
+
+  saveToImage(watermarkfilename, watermarkData, width, height);
+} else {
+  console.log(math.complex({ r: 3, phi: 3.2221111 }));
+  console.log(math.complex({ r: 3, phi: 3.2221111 + 20 * math.pi }));
 }
