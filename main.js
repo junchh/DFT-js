@@ -2,6 +2,7 @@ const { pi } = require("mathjs");
 const math = require("mathjs");
 const inkjet = require("inkjet");
 const fs = require("fs");
+const seedrandom = require("seedrandom");
 
 const parseMap = (data) => {
   const result = [];
@@ -261,10 +262,9 @@ const getCategory = (phase, step) => {
   }
 };
 
-const embed = (map, watermark, step) => {
+const embed = (map, watermark, step, key) => {
   const stepNormalized = (step / 360.0) * 2 * math.pi;
   let mapData = map;
-  console.log(mapData.length);
   let cur = 1;
   while (mapData.length > cur) {
     cur *= 2;
@@ -274,14 +274,26 @@ const embed = (map, watermark, step) => {
     mapData.push(math.complex(0));
   }
   fft(mapData, 1);
+
+  const myrng = seedrandom(key);
+  const order = [];
+  const mp = new Map();
+  for (let i = 0; i < watermark.length; ) {
+    const g = (myrng.int32() >>> 0) % cur;
+    if (!mp.has(g)) {
+      order.push(g);
+      i++;
+      mp.set(g, 1);
+    }
+  }
   //mapData = dft_normal(mapData);
   for (let i = 0; i < watermark.length; i++) {
-    const polarForm = mapData[i].toPolar();
+    const polarForm = mapData[order[i]].toPolar();
     const phi = normalize(polarForm.phi);
     if (getCategory(phi, stepNormalized) !== watermark[i]) {
       const newAngle = phi + stepNormalized;
       const r = polarForm.r;
-      mapData[i] = math.complex({ r: r, phi: newAngle });
+      mapData[order[i]] = math.complex({ r: r, phi: newAngle });
     }
     // if (i < 10) {
     //   console.log(mapData[i]);
@@ -295,11 +307,10 @@ const embed = (map, watermark, step) => {
   // // fft(mapData, -1);
 };
 
-const extract = (map, width, height, step) => {
+const extract = (map, width, height, step, key) => {
   const result = [];
   const stepNormalized = (step / 360.0) * 2 * math.pi;
   let mapData = map;
-  console.log(mapData.length);
   let cur = 1;
   while (mapData.length > cur) {
     cur *= 2;
@@ -311,12 +322,23 @@ const extract = (map, width, height, step) => {
   //mapData = dft_normal(mapData);
   fft(mapData, 1);
 
+  const myrng = seedrandom(key);
+  const order = [];
+  const mp = new Map();
+  for (let i = 0; i < width * height; ) {
+    const g = (myrng.int32() >>> 0) % cur;
+    if (!mp.has(g)) {
+      order.push(g);
+      i++;
+      mp.set(g, 1);
+    }
+  }
   for (let i = 0; i < width * height; i++) {
     // if (i < 10) {
     //   console.log(mapData[i]);
     //   console.log(getCategory(mapData[i].toPolar().phi, stepNormalized));
     // }
-    const polarForm = mapData[i].toPolar();
+    const polarForm = mapData[order[i]].toPolar();
     const phi = normalize(polarForm.phi);
     result.push(getCategory(phi, stepNormalized));
   }
@@ -334,6 +356,7 @@ if (cmd === "embed") {
   const mapfilename = process.argv[3];
   const watermarkfilename = process.argv[4];
   const targetname = process.argv[5];
+  const key = process.argv[6];
 
   let rawdata = fs.readFileSync(mapfilename);
   let data = JSON.parse(rawdata);
@@ -348,7 +371,7 @@ if (cmd === "embed") {
     }
     const watermarkArray = convToBlackWhite(decoded.data);
 
-    embed(mapData, watermarkArray, 0.03);
+    embed(mapData, watermarkArray, 0.03, key);
     parseComplex(mapData, data);
 
     fs.writeFileSync(targetname, JSON.stringify(data));
@@ -358,13 +381,14 @@ if (cmd === "embed") {
   const watermarkfilename = process.argv[4];
   const width = parseInt(process.argv[5]);
   const height = parseInt(process.argv[6]);
+  const key = process.argv[7];
 
   let rawdata = fs.readFileSync(mapfilename);
   let data = JSON.parse(rawdata);
 
   const mapData = parseMap(data);
 
-  const watermarkData = extract(mapData, width, height, 0.03);
+  const watermarkData = extract(mapData, width, height, 0.03, key);
 
   saveToImage(watermarkfilename, watermarkData, width, height);
 } else {

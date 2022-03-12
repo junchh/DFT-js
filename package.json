@@ -11,6 +11,7 @@
   "license": "ISC",
   "dependencies": {
     "inkjet": "^3.0.0",
-    "mathjs": "^10.1.1"
+    "mathjs": "^10.1.1",
+    "seedrandom": "^3.0.5"
   }
 }
