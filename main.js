@@ -130,6 +130,78 @@ const parseComplex = (data, originalMap) => {
   });
 };
 
+const deleteVertices = (data, num) => {
+  const features = data.features;
+  let cnt = num;
+  const myrng = seedrandom("ayayaya");
+  for (let i = 0; i < features.length; i++) {
+    const geometry = features[i].geometry;
+
+    if (geometry.type === "Polygon") {
+      const temp = [];
+      for (let j = 0; j < geometry.coordinates.length; j++) {
+        const temp2 = [];
+        for (let k = 0; k < geometry.coordinates[j].length; k++) {
+          const g = (myrng.int32() >>> 0) % 2;
+          if (g === 1 && cnt > 0) {
+            cnt--;
+          } else {
+            temp2.push([
+              geometry.coordinates[j][k][0],
+              geometry.coordinates[j][k][1],
+            ]);
+          }
+        }
+        temp.push(temp2);
+      }
+
+      geometry.coordinates = temp;
+    } else if (geometry.type === "MultiLineString") {
+      const temp = [];
+      for (let j = 0; j < geometry.coordinates.length; j++) {
+        const temp2 = [];
+        for (let k = 0; k < geometry.coordinates[j].length; k++) {
+          const g = (myrng.int32() >>> 0) % 2;
+          if (g === 1 && cnt > 0) {
+            cnt--;
+          } else {
+            temp2.push([
+              geometry.coordinates[j][k][0],
+              geometry.coordinates[j][k][1],
+            ]);
+          }
+        }
+        temp.push(temp2);
+      }
+
+      geometry.coordinates = temp;
+    } else if (geometry.type === "MultiPolygon") {
+      const temp = [];
+      for (let j = 0; j < geometry.coordinates.length; j++) {
+        const temp2 = [];
+        for (let k = 0; k < geometry.coordinates[j].length; k++) {
+          const temp3 = [];
+          for (let l = 0; l < geometry.coordinates[j][k].length; l++) {
+            const g = (myrng.int32() >>> 0) % 2;
+            if (g === 1) {
+              cnt--;
+            } else {
+              temp3.push([
+                geometry.coordinates[j][k][l][0],
+                geometry.coordinates[j][k][l][1],
+              ]);
+            }
+          }
+          temp2.push(temp3);
+        }
+        temp.push(temp2);
+      }
+
+      geometry.coordinates = temp;
+    }
+  }
+};
+
 const convToBlackWhite = (arr) => {
   const res = [];
   let i = 0;
@@ -262,83 +334,113 @@ const getCategory = (phase, step) => {
   }
 };
 
-const embed = (map, watermark, step, key) => {
+const embed_fft = (map, watermark, step, key, width, height) => {
   const stepNormalized = (step / 360.0) * 2 * math.pi;
+  const newKey =
+    key +
+    "-" +
+    width.toString() +
+    "-" +
+    height.toString() +
+    "-" +
+    map.length.toString();
   let mapData = map;
-  let cur = 1;
-  while (mapData.length > cur) {
-    cur *= 2;
-  }
-  let diff = cur - mapData.length;
-  for (let i = 0; i < diff; i++) {
-    mapData.push(math.complex(0));
-  }
-  fft(mapData, 1);
-
   const myrng = seedrandom(key);
   const order = [];
   const mp = new Map();
   for (let i = 0; i < watermark.length; ) {
-    const g = (myrng.int32() >>> 0) % cur;
+    const g = (myrng.int32() >>> 0) % mapData.length;
     if (!mp.has(g)) {
       order.push(g);
       i++;
       mp.set(g, 1);
     }
   }
+  let newMap = [];
+  for (let i = 0; i < watermark.length; i++) {
+    newMap.push(mapData[order[i]]);
+  }
+
+  let cur = 1;
+  while (watermark.length > cur) {
+    cur *= 2;
+  }
+  let diff = cur - watermark.length;
+  for (let i = 0; i < diff; i++) {
+    newMap.push(math.complex(0));
+  }
+  fft(newMap, 1);
+
   //mapData = dft_normal(mapData);
   for (let i = 0; i < watermark.length; i++) {
-    const polarForm = mapData[order[i]].toPolar();
+    const polarForm = newMap[i].toPolar();
     const phi = normalize(polarForm.phi);
     if (getCategory(phi, stepNormalized) !== watermark[i]) {
       const newAngle = phi + stepNormalized;
       const r = polarForm.r;
-      mapData[order[i]] = math.complex({ r: r, phi: newAngle });
+      newMap[i] = math.complex({ r: r, phi: newAngle });
     }
     // if (i < 10) {
     //   console.log(mapData[i]);
     //   console.log(getCategory(mapData[i].toPolar().phi, stepNormalized));
     // }
   }
-  fft(mapData, -1);
+  fft(newMap, -1);
+  for (let i = 0; i < watermark.length; i++) {
+    mapData[order[i]] = newMap[i];
+  }
+  for (let i = watermark.length; i < newMap.length; i++) {
+    mapData.push(newMap[i]);
+  }
+
+  return newKey;
   //mapData = inverse_dft_normal(mapData);
   // fft(mapData, 1);
   // console.log("batas");
   // // fft(mapData, -1);
 };
 
-const extract = (map, width, height, step, key) => {
+const extract_fft = (map, step, keyString) => {
+  const myKey = keyString.split("-");
+  const key = myKey[0];
+  const width = myKey[1];
+  const height = myKey[2];
+  const mapSize = myKey[3];
   const result = [];
   const stepNormalized = (step / 360.0) * 2 * math.pi;
-  let mapData = map;
-  let cur = 1;
-  while (mapData.length > cur) {
-    cur *= 2;
-  }
-  let diff = cur - mapData.length;
-  for (let i = 0; i < diff; i++) {
-    mapData.push(math.complex(0));
-  }
-  //mapData = dft_normal(mapData);
-  fft(mapData, 1);
-
   const myrng = seedrandom(key);
   const order = [];
   const mp = new Map();
+  let cur = 1;
+  while (width * height > cur) {
+    cur *= 2;
+  }
+  let diff = cur - width * height;
   for (let i = 0; i < width * height; ) {
-    const g = (myrng.int32() >>> 0) % cur;
+    const g = (myrng.int32() >>> 0) % (map.length - diff);
     if (!mp.has(g)) {
       order.push(g);
       i++;
       mp.set(g, 1);
     }
   }
+  let mapData = map;
+  let newMap = [];
+  for (let i = 0; i < width * height; i++) {
+    newMap.push(mapData[order[i]]);
+  }
+  for (let i = 0; i < diff; i++) {
+    newMap.push(mapData[mapData.length - diff + i]);
+  }
+  //mapData = dft_normal(mapData);
+  fft(newMap, 1);
+
   for (let i = 0; i < width * height; i++) {
     // if (i < 10) {
     //   console.log(mapData[i]);
     //   console.log(getCategory(mapData[i].toPolar().phi, stepNormalized));
     // }
-    const polarForm = mapData[order[i]].toPolar();
+    const polarForm = newMap[i].toPolar();
     const phi = normalize(polarForm.phi);
     result.push(getCategory(phi, stepNormalized));
   }
@@ -351,8 +453,61 @@ const extract = (map, width, height, step, key) => {
 // fft(initial, -1);
 // console.log(initial);
 
+const extract_fft_new = (map, step, keyString) => {
+  const myKey = keyString.split("-");
+  const key = myKey[0];
+  const width = parseInt(myKey[1]);
+  const height = parseInt(myKey[2]);
+  const mapSize = parseInt(myKey[3]);
+  const result = [];
+  const stepNormalized = (step / 360.0) * 2 * math.pi;
+  const myrng = seedrandom(key);
+  const order = [];
+  const mp = new Map();
+  let cur = 1;
+  while (width * height > cur) {
+    cur *= 2;
+  }
+  let diff = cur - width * height;
+  console.log(map.length);
+  console.log(mapSize);
+  console.log(diff);
+  if (diff + mapSize === map.length) {
+    for (let i = 0; i < width * height; ) {
+      const g = (myrng.int32() >>> 0) % (map.length - diff);
+      if (!mp.has(g)) {
+        order.push(g);
+        i++;
+        mp.set(g, 1);
+      }
+    }
+    let mapData = map;
+    let newMap = [];
+    for (let i = 0; i < width * height; i++) {
+      newMap.push(mapData[order[i]]);
+    }
+    for (let i = 0; i < diff; i++) {
+      newMap.push(mapData[mapData.length - diff + i]);
+    }
+    //mapData = dft_normal(mapData);
+    fft(newMap, 1);
+
+    for (let i = 0; i < width * height; i++) {
+      // if (i < 10) {
+      //   console.log(mapData[i]);
+      //   console.log(getCategory(mapData[i].toPolar().phi, stepNormalized));
+      // }
+      const polarForm = newMap[i].toPolar();
+      const phi = normalize(polarForm.phi);
+      result.push(getCategory(phi, stepNormalized));
+    }
+    return result;
+  } else {
+  }
+};
+
 const cmd = process.argv[2];
-if (cmd === "embed") {
+if (cmd === "embed_fft") {
   const mapfilename = process.argv[3];
   const watermarkfilename = process.argv[4];
   const targetname = process.argv[5];
@@ -371,26 +526,98 @@ if (cmd === "embed") {
     }
     const watermarkArray = convToBlackWhite(decoded.data);
 
-    embed(mapData, watermarkArray, 0.03, key);
+    const newKey = embed_fft(
+      mapData,
+      watermarkArray,
+      0.03,
+      key,
+      decoded.width,
+      decoded.height
+    );
     parseComplex(mapData, data);
+
+    console.log(newKey);
 
     fs.writeFileSync(targetname, JSON.stringify(data));
   });
-} else if (cmd === "extract") {
+} else if (cmd === "extract_fft") {
   const mapfilename = process.argv[3];
   const watermarkfilename = process.argv[4];
-  const width = parseInt(process.argv[5]);
-  const height = parseInt(process.argv[6]);
-  const key = process.argv[7];
+  const key = process.argv[5];
 
   let rawdata = fs.readFileSync(mapfilename);
   let data = JSON.parse(rawdata);
 
   const mapData = parseMap(data);
 
-  const watermarkData = extract(mapData, width, height, 0.03, key);
+  const watermarkData = extract_fft_new(mapData, 0.03, key);
 
-  saveToImage(watermarkfilename, watermarkData, width, height);
+  const myArr = key.split("-");
+
+  saveToImage(watermarkfilename, watermarkData, myArr[1], myArr[2]);
+} else if (cmd === "translate") {
+  const mapfilename = process.argv[3];
+  const x_trans = parseFloat(process.argv[4]);
+  const y_trans = parseFloat(process.argv[5]);
+  const targetname = process.argv[6];
+  let rawdata = fs.readFileSync(mapfilename);
+  let data = JSON.parse(rawdata);
+
+  const mapData = parseMap(data);
+
+  for (let i = 0; i < mapData.length; i++) {
+    mapData[i].re += x_trans;
+    mapData[i].im += y_trans;
+  }
+
+  parseComplex(mapData, data);
+
+  fs.writeFileSync(targetname, JSON.stringify(data));
+} else if (cmd === "rotate") {
+  const mapfilename = process.argv[3];
+  const degree = parseFloat(process.argv[4]);
+  const targetname = process.argv[5];
+  let rawdata = fs.readFileSync(mapfilename);
+  let data = JSON.parse(rawdata);
+
+  const mapData = parseMap(data);
+  const deg = (degree / 360.0) * 2 * math.pi;
+  const angle = math.complex({ r: 1, phi: deg });
+  for (let i = 0; i < mapData.length; i++) {
+    mapData[i] = math.multiply(mapData[i], angle);
+  }
+
+  parseComplex(mapData, data);
+
+  fs.writeFileSync(targetname, JSON.stringify(data));
+} else if (cmd === "scale") {
+  const mapfilename = process.argv[3];
+  const x_trans = parseFloat(process.argv[4]);
+  const y_trans = parseFloat(process.argv[5]);
+  const targetname = process.argv[6];
+  let rawdata = fs.readFileSync(mapfilename);
+  let data = JSON.parse(rawdata);
+
+  const mapData = parseMap(data);
+
+  for (let i = 0; i < mapData.length; i++) {
+    mapData[i].re *= x_trans;
+    mapData[i].im *= y_trans;
+  }
+
+  parseComplex(mapData, data);
+
+  fs.writeFileSync(targetname, JSON.stringify(data));
+} else if (cmd === "delete") {
+  const mapfilename = process.argv[3];
+  const num = parseInt(process.argv[4]);
+  const targetname = process.argv[5];
+  let rawdata = fs.readFileSync(mapfilename);
+  let data = JSON.parse(rawdata);
+
+  deleteVertices(data, num);
+
+  fs.writeFileSync(targetname, JSON.stringify(data));
 } else {
   console.log(math.complex({ r: 3, phi: 3.2221111 }));
   console.log(math.complex({ r: 3, phi: 3.2221111 + 20 * math.pi }));
