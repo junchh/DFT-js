@@ -4,6 +4,42 @@ const inkjet = require("inkjet");
 const fs = require("fs");
 const seedrandom = require("seedrandom");
 
+function dec2bin(dec) {
+  const buffer = new ArrayBuffer(8);
+  new DataView(buffer).setFloat64(0, dec, false);
+  const newBuf = new Uint8Array(buffer);
+
+  const res = [];
+  for (let i = 0; i < 8; i++) {
+    for (let j = 7; j >= 0; j--) {
+      if (newBuf[i] & (1 << j)) {
+        res.push(1);
+      } else {
+        res.push(0);
+      }
+    }
+  }
+  return res;
+}
+
+function bin2dec(bin) {
+  const arr = [];
+  for (let i = 0; i < 64; i += 8) {
+    let k = 7;
+    let num = 0;
+    for (let j = i; j < i + 8; j++) {
+      if (bin[j] === 1) {
+        num += 1 << k;
+      }
+      k--;
+    }
+    arr.push(num);
+  }
+  const buffer = new ArrayBuffer(8);
+  new Uint8Array(buffer).set(arr);
+  return new DataView(buffer).getFloat64(0, false);
+}
+
 const parseMap = (data) => {
   const result = [];
   const features = data.features;
@@ -617,6 +653,24 @@ if (cmd === "embed_fft") {
 
   deleteVertices(data, num);
 
+  fs.writeFileSync(targetname, JSON.stringify(data));
+} else if (cmd === "alter") {
+  const mapfilename = process.argv[3];
+  const targetname = process.argv[4];
+
+  let rawdata = fs.readFileSync(mapfilename);
+  let data = JSON.parse(rawdata);
+
+  const mapData = parseMap(data);
+
+  for (let i = 0; i < mapData.length; i++) {
+    mapData[i].re;
+    const arr = dec2bin(mapData[i].re);
+    arr[63] = 1;
+    mapData[i].re = bin2dec(arr);
+  }
+
+  parseComplex(mapData, data);
   fs.writeFileSync(targetname, JSON.stringify(data));
 } else {
   console.log(math.complex({ r: 3, phi: 3.2221111 }));
