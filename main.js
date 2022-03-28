@@ -43,6 +43,8 @@ function bin2dec(bin) {
 const parseMap = (data) => {
   const result = [];
   const features = data.features;
+  let ptr = 0;
+  const forbidden = new Map();
   for (let i = 0; i < features.length; i++) {
     const geometry = features[i].geometry;
 
@@ -50,21 +52,27 @@ const parseMap = (data) => {
       result.push(
         math.complex(geometry.coordinates[0], geometry.coordinates[1])
       );
+      ptr++;
     } else if (geometry.type === "LineString") {
       for (let j = 0; j < geometry.coordinates.length; j++) {
         result.push(
           math.complex(geometry.coordinates[j][0], geometry.coordinates[j][1])
         );
+        ptr++;
       }
     } else if (geometry.type === "Polygon") {
       for (let j = 0; j < geometry.coordinates.length; j++) {
         for (let k = 0; k < geometry.coordinates[j].length; k++) {
+          if (k === 0 || k === geometry.coordinates[j].length - 1) {
+            forbidden.set(ptr, 1);
+          }
           result.push(
             math.complex(
               geometry.coordinates[j][k][0],
               geometry.coordinates[j][k][1]
             )
           );
+          ptr++;
         }
       }
     } else if (geometry.type === "MultiPoint") {
@@ -72,6 +80,7 @@ const parseMap = (data) => {
         result.push(
           math.complex(geometry.coordinates[j][0], geometry.coordinates[j][1])
         );
+        ptr++;
       }
     } else if (geometry.type === "MultiLineString") {
       for (let j = 0; j < geometry.coordinates.length; j++) {
@@ -82,24 +91,29 @@ const parseMap = (data) => {
               geometry.coordinates[j][k][1]
             )
           );
+          ptr++;
         }
       }
     } else if (geometry.type === "MultiPolygon") {
       for (let j = 0; j < geometry.coordinates.length; j++) {
         for (let k = 0; k < geometry.coordinates[j].length; k++) {
           for (let l = 0; l < geometry.coordinates[j][k].length; l++) {
+            if (l === 0 || l === geometry.coordinates[j][k].length - 1) {
+              forbidden.set(ptr, 1);
+            }
             result.push(
               math.complex(
                 geometry.coordinates[j][k][l][0],
                 geometry.coordinates[j][k][l][1]
               )
             );
+            ptr++;
           }
         }
       }
     }
   }
-  return result;
+  return [result, forbidden];
 };
 
 const parseComplex = (data, originalMap) => {
@@ -168,8 +182,56 @@ const parseComplex = (data, originalMap) => {
 
 const deleteVertices = (data, num) => {
   const features = data.features;
-  let cnt = num;
-  const myrng = seedrandom("ayayaya");
+  let ptr = 0;
+  for (let i = 0; i < features.length; i++) {
+    const geometry = features[i].geometry;
+
+    if (geometry.type === "Point") {
+      ptr++;
+    } else if (geometry.type === "LineString") {
+      for (let j = 0; j < geometry.coordinates.length; j++) {
+        ptr++;
+      }
+    } else if (geometry.type === "Polygon") {
+      for (let j = 0; j < geometry.coordinates.length; j++) {
+        for (let k = 0; k < geometry.coordinates[j].length; k++) {
+          ptr++;
+        }
+      }
+    } else if (geometry.type === "MultiPoint") {
+      for (let j = 0; j < geometry.coordinates.length; j++) {
+        ptr++;
+      }
+    } else if (geometry.type === "MultiLineString") {
+      for (let j = 0; j < geometry.coordinates.length; j++) {
+        for (let k = 0; k < geometry.coordinates[j].length; k++) {
+          ptr++;
+        }
+      }
+    } else if (geometry.type === "MultiPolygon") {
+      for (let j = 0; j < geometry.coordinates.length; j++) {
+        for (let k = 0; k < geometry.coordinates[j].length; k++) {
+          for (let l = 0; l < geometry.coordinates[j][k].length; l++) {
+            ptr++;
+          }
+        }
+      }
+    }
+  }
+  const myrng = seedrandom("ayayayaya");
+  const order = [];
+  const mp = new Map();
+  for (let i = 0; i < num; ) {
+    const g = (myrng.int32() >>> 0) % ptr;
+    if (!mp.has(g)) {
+      order.push(g);
+      i++;
+      mp.set(g, 1);
+    }
+  }
+  order.sort((a, b) => a - b);
+  let h = 0;
+  ptr = 0;
   for (let i = 0; i < features.length; i++) {
     const geometry = features[i].geometry;
 
@@ -178,15 +240,15 @@ const deleteVertices = (data, num) => {
       for (let j = 0; j < geometry.coordinates.length; j++) {
         const temp2 = [];
         for (let k = 0; k < geometry.coordinates[j].length; k++) {
-          const g = (myrng.int32() >>> 0) % 2;
-          if (g === 1 && cnt > 0) {
-            cnt--;
+          if (ptr === order[h]) {
+            h++;
           } else {
             temp2.push([
               geometry.coordinates[j][k][0],
               geometry.coordinates[j][k][1],
             ]);
           }
+          ptr++;
         }
         temp.push(temp2);
       }
@@ -197,15 +259,15 @@ const deleteVertices = (data, num) => {
       for (let j = 0; j < geometry.coordinates.length; j++) {
         const temp2 = [];
         for (let k = 0; k < geometry.coordinates[j].length; k++) {
-          const g = (myrng.int32() >>> 0) % 2;
-          if (g === 1 && cnt > 0) {
-            cnt--;
+          if (ptr === order[h]) {
+            h++;
           } else {
             temp2.push([
               geometry.coordinates[j][k][0],
               geometry.coordinates[j][k][1],
             ]);
           }
+          ptr++;
         }
         temp.push(temp2);
       }
@@ -218,21 +280,32 @@ const deleteVertices = (data, num) => {
         for (let k = 0; k < geometry.coordinates[j].length; k++) {
           const temp3 = [];
           for (let l = 0; l < geometry.coordinates[j][k].length; l++) {
-            const g = (myrng.int32() >>> 0) % 2;
-            if (g === 1) {
-              cnt--;
+            if (ptr === order[h]) {
+              h++;
             } else {
               temp3.push([
                 geometry.coordinates[j][k][l][0],
                 geometry.coordinates[j][k][l][1],
               ]);
             }
+            ptr++;
           }
           temp2.push(temp3);
         }
         temp.push(temp2);
       }
 
+      geometry.coordinates = temp;
+    } else if (geometry.type === "LineString") {
+      const temp = [];
+      for (let j = 0; j < geometry.coordinates.length; j++) {
+        if (ptr === order[h]) {
+          h++;
+        } else {
+          temp.push([geometry.coordinates[j][0], geometry.coordinates[j][1]]);
+        }
+        ptr++;
+      }
       geometry.coordinates = temp;
     }
   }
@@ -370,7 +443,7 @@ const getCategory = (phase, step) => {
   }
 };
 
-const embed_fft = (map, watermark, step, key, width, height) => {
+const embed_fft = (map, watermark, step, key, width, height, forbidden) => {
   const stepNormalized = (step / 360.0) * 2 * math.pi;
   const newKey =
     key +
@@ -381,17 +454,19 @@ const embed_fft = (map, watermark, step, key, width, height) => {
     "-" +
     map.length.toString();
   let mapData = map;
+  const initialMapSize = mapData.length;
   const myrng = seedrandom(key);
   const order = [];
   const mp = new Map();
   for (let i = 0; i < watermark.length; ) {
     const g = (myrng.int32() >>> 0) % mapData.length;
-    if (!mp.has(g)) {
+    if (!mp.has(g) && !forbidden.has(g)) {
       order.push(g);
       i++;
       mp.set(g, 1);
     }
   }
+  order.sort((a, b) => a - b);
   let newMap = [];
   for (let i = 0; i < watermark.length; i++) {
     newMap.push(mapData[order[i]]);
@@ -428,7 +503,23 @@ const embed_fft = (map, watermark, step, key, width, height) => {
   for (let i = watermark.length; i < newMap.length; i++) {
     mapData.push(newMap[i]);
   }
-
+  let k = 0;
+  for (let i = 0; i < mapData.length; i++) {
+    if (order[k] === i || i >= initialMapSize) {
+      const arr = dec2bin(mapData[i].re);
+      if (arr[63] === 0) {
+        arr[63] = 1;
+      }
+      mapData[i].re = bin2dec(arr);
+      k++;
+    } else {
+      const arr = dec2bin(mapData[i].re);
+      if (arr[63] === 1) {
+        arr[63] = 0;
+      }
+      mapData[i].re = bin2dec(arr);
+    }
+  }
   return newKey;
   //mapData = inverse_dft_normal(mapData);
   // fft(mapData, 1);
@@ -489,7 +580,7 @@ const extract_fft = (map, step, keyString) => {
 // fft(initial, -1);
 // console.log(initial);
 
-const extract_fft_new = (map, step, keyString) => {
+const extract_fft_new = (map, step, keyString, forbidden) => {
   const myKey = keyString.split("-");
   const key = myKey[0];
   const width = parseInt(myKey[1]);
@@ -505,18 +596,16 @@ const extract_fft_new = (map, step, keyString) => {
     cur *= 2;
   }
   let diff = cur - width * height;
-  console.log(map.length);
-  console.log(mapSize);
-  console.log(diff);
   if (diff + mapSize === map.length) {
     for (let i = 0; i < width * height; ) {
       const g = (myrng.int32() >>> 0) % (map.length - diff);
-      if (!mp.has(g)) {
+      if (!mp.has(g) && !forbidden.has(g)) {
         order.push(g);
         i++;
         mp.set(g, 1);
       }
     }
+    order.sort((a, b) => a - b);
     let mapData = map;
     let newMap = [];
     for (let i = 0; i < width * height; i++) {
@@ -529,16 +618,29 @@ const extract_fft_new = (map, step, keyString) => {
     fft(newMap, 1);
 
     for (let i = 0; i < width * height; i++) {
-      // if (i < 10) {
-      //   console.log(mapData[i]);
-      //   console.log(getCategory(mapData[i].toPolar().phi, stepNormalized));
-      // }
       const polarForm = newMap[i].toPolar();
       const phi = normalize(polarForm.phi);
       result.push(getCategory(phi, stepNormalized));
     }
     return result;
   } else {
+    let mapData = map;
+    let newMap = [];
+    for (let i = 0; i < mapData.length; i++) {
+      const arr = dec2bin(mapData[i].re);
+      if (arr[63] === 1) {
+        newMap.push(mapData[i]);
+      }
+    }
+    console.log(newMap.length);
+    fft(newMap, 1);
+
+    for (let i = 0; i < width * height; i++) {
+      const polarForm = newMap[i].toPolar();
+      const phi = normalize(polarForm.phi);
+      result.push(getCategory(phi, stepNormalized));
+    }
+    return result;
   }
 };
 
@@ -552,7 +654,7 @@ if (cmd === "embed_fft") {
   let rawdata = fs.readFileSync(mapfilename);
   let data = JSON.parse(rawdata);
 
-  const mapData = parseMap(data);
+  const [mapData, forbidden] = parseMap(data);
 
   const watermarkBuf = fs.readFileSync(watermarkfilename);
 
@@ -568,7 +670,8 @@ if (cmd === "embed_fft") {
       0.03,
       key,
       decoded.width,
-      decoded.height
+      decoded.height,
+      forbidden
     );
     parseComplex(mapData, data);
 
@@ -584,9 +687,9 @@ if (cmd === "embed_fft") {
   let rawdata = fs.readFileSync(mapfilename);
   let data = JSON.parse(rawdata);
 
-  const mapData = parseMap(data);
+  const [mapData, forbidden] = parseMap(data);
 
-  const watermarkData = extract_fft_new(mapData, 0.03, key);
+  const watermarkData = extract_fft_new(mapData, 0.03, key, forbidden);
 
   const myArr = key.split("-");
 
@@ -599,7 +702,7 @@ if (cmd === "embed_fft") {
   let rawdata = fs.readFileSync(mapfilename);
   let data = JSON.parse(rawdata);
 
-  const mapData = parseMap(data);
+  const [mapData, forbidden] = parseMap(data);
 
   for (let i = 0; i < mapData.length; i++) {
     mapData[i].re += x_trans;
@@ -616,7 +719,7 @@ if (cmd === "embed_fft") {
   let rawdata = fs.readFileSync(mapfilename);
   let data = JSON.parse(rawdata);
 
-  const mapData = parseMap(data);
+  const [mapData, forbidden] = parseMap(data);
   const deg = (degree / 360.0) * 2 * math.pi;
   const angle = math.complex({ r: 1, phi: deg });
   for (let i = 0; i < mapData.length; i++) {
@@ -634,7 +737,7 @@ if (cmd === "embed_fft") {
   let rawdata = fs.readFileSync(mapfilename);
   let data = JSON.parse(rawdata);
 
-  const mapData = parseMap(data);
+  const [mapData, forbidden] = parseMap(data);
 
   for (let i = 0; i < mapData.length; i++) {
     mapData[i].re *= x_trans;
@@ -661,7 +764,7 @@ if (cmd === "embed_fft") {
   let rawdata = fs.readFileSync(mapfilename);
   let data = JSON.parse(rawdata);
 
-  const mapData = parseMap(data);
+  const [mapData, forbidden] = parseMap(data);
 
   for (let i = 0; i < mapData.length; i++) {
     mapData[i].re;
