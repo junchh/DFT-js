@@ -327,7 +327,7 @@ const convToBlackWhite = (arr) => {
 };
 
 const saveToImage = (filename, arr, width, height) => {
-  const frameData = Buffer.alloc(width * height * 4);
+  const frameData = new Array(width * height * 4);
   let i = 0;
   let k = 0;
 
